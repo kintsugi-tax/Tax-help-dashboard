@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TXHLP Jurisdiction Summary</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<style>
+  :root { color-scheme: light;
+    --bg:#f7f7f9; --card:#ffffff; --ink:#1c1c28; --muted:#6b6b80;
+    --line:#e6e6ee; --accent:#5b3df5; --accent-soft:#efeaff;
+    --green:#0e8a5f; --green-soft:#e3f5ed; --red:#c93030; --red-soft:#fdeaea;
+    --yellow:#8a6d00; --yellow-soft:#fff5d6;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+    justify-content:space-between; padding:16px 20px 8px; }
+  .title { font-size:18px; font-weight:700; }
+  .title small { display:block; font-weight:400; color:var(--muted); font-size:12px; }
+  .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--card); }
+  .seg button { border:0; background:transparent; padding:6px 14px; cursor:pointer; font:inherit; color:var(--muted); }
+  .seg button.on { background:var(--accent); color:#fff; }
+  .nav { display:flex; align-items:center; gap:6px; }
+  .nav button { border:1px solid var(--line); background:var(--card); border-radius:8px;
+    padding:5px 10px; cursor:pointer; font:inherit; }
+  .nav button:disabled { opacity:.35; cursor:default; }
+  #periodLabel { font-weight:600; min-width:210px; text-align:center; }
+  #status { padding:8px 20px; color:var(--muted); }
+  #status .err { background:var(--red-soft); color:var(--red); padding:10px 12px; border-radius:8px; }
+  main { padding:0 20px 24px; display:grid; gap:14px; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .kpi { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+  .kpi .v { font-size:22px; font-weight:700; }
+  .kpi .l { color:var(--muted); font-size:12px; }
+  .kpi .d { font-size:12px; font-weight:600; }
+  .d.up { color:var(--red); } .d.down { color:var(--green); } .d.flat { color:var(--muted); }
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:760px){ .charts { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card h3 { margin:0 0 10px; font-size:14px; }
+  .chartwrap { position:relative; height:220px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--muted); font-weight:600; border-bottom:1px solid var(--line);
+    padding:6px 8px; white-space:nowrap; }
+  td { border-bottom:1px solid var(--line); padding:6px 8px; vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  tbody tr.clickable { cursor:pointer; }
+  tbody tr.clickable:hover { background:var(--accent-soft); }
+  tbody tr.sel { background:var(--accent-soft); }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .badge { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:10px; }
+  .badge.yellow { background:var(--yellow-soft); color:var(--yellow); }
+  .badge.green { background:var(--green-soft); color:var(--green); }
+  .badge.red { background:var(--red-soft); color:var(--red); }
+  .badge.grey { background:var(--bg); color:var(--muted); border:1px solid var(--line); }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  footer { color:var(--muted); font-size:12px; padding:4px 2px 0; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--line);
+    border-top-color:var(--accent); border-radius:50%; animation:sp 1s linear infinite;
+    vertical-align:-2px; margin-right:6px; }
+  @keyframes sp { to { transform:rotate(360deg);} }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">Tax Help (TXHLP) — Jurisdiction Summary
+    <small>Query volume + turnaround time by region and jurisdiction · live from Jira</small>
+  </div>
+  <div class="controls">
+    <div class="seg" id="segPeriod">
+      <button data-p="week">Week</button>
+      <button data-p="month">Month</button>
+      <button data-p="quarter">Quarter</button>
+    </div>
+    <div class="nav">
+      <button id="prevBtn" title="Previous period">◀</button>
+      <span id="periodLabel"></span>
+      <button id="nextBtn" title="Next period">▶</button>
+    </div>
+  </div>
+</header>
+<div id="status"><span class="spin"></span>Loading tickets from Jira…</div>
+<main id="main" hidden>
+  <section class="kpis" id="kpis"></section>
+  <section class="charts">
+    <div class="card"><h3>New queries by region</h3><div class="chartwrap"><canvas id="chartVol"></canvas></div></div>
+    <div class="card"><h3>Median TAT by region <span class="badge grey">business hours, resolved in period</span></h3><div class="chartwrap"><canvas id="chartTat"></canvas></div></div>
+  </section>
+  <section class="card">
+    <h3>Region summary <span class="badge green">Relevant Regions field — reliable</span></h3>
+    <table id="regionTable"><thead><tr>
+      <th>Region</th><th class="num">New</th><th class="num">Resolved</th>
+      <th class="num">Median TAT (bh)</th><th class="num">≤ 48h SLA</th><th>Top jurisdictions</th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+  <section class="card">
+    <h3>Jurisdiction drill-down <span class="badge yellow">heuristic — extracted from ticket summaries</span></h3>
+    <table id="countryTable"><thead><tr>
+      <th>Jurisdiction</th><th>Region tag</th><th class="num">New</th>
+      <th class="num">Resolved</th><th class="num">Median TAT (bh)</th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+  <section class="card">
+    <h3>Tickets <span id="ticketFilterLabel" class="badge grey">all regions</span></h3>
+    <table id="ticketTable"><thead><tr>
+      <th>Key</th><th>Summary</th><th>Region</th><th>Status</th>
+      <th class="num">TAT (bh)</th><th>Created</th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+  <footer id="foot"></footer>
+</main>
+
+<script>
+"use strict";
+/* ============================================================
+   TXHLP Jurisdiction Summary — live Cowork artifact
+   Data: Jira Service Management board TXHLP (Tax Help), via
+   Atlassian MCP tool searchJiraIssuesUsingJql.
+   Field map (verified against live tickets, Jul 2026):
+     customfield_11193  Relevant Regions (multi-select: US, EU,
+                        Canada, LATAM, APAC, MEA) — set on intake
+     customfield_10090  "Time to done" SLA (48h business-hour goal,
+                        clock pauses in waiting states, weekends off)
+     customfield_10046  "Time to first response" SLA (24h goal)
+   TAT (headline) = elapsed business hours of the last completed
+   "Time to done" SLA cycle. Fallback: calendar created→resolved,
+   marked with * in tables.
+   Jurisdiction drill-down is HEURISTIC: country / US-state names
+   are extracted from ticket summaries by dictionary match.
+   ============================================================ */
+
+const CLOUD_ID = "0ad27751-cd16-4ced-a3da-67aaa28d6b7f";
+const TOOL = "mcp__d9e86d4a-9e00-4529-9b8f-a9ba7df042a5__searchJiraIssuesUsingJql";
+const JIRA_BROWSE = "https://trykintsugi.atlassian.net/browse/";
+const FIELDS = ["summary","status","created","resolutiondate","statuscategorychangedate",
+  "assignee","customfield_11193","customfield_10090","customfield_10046"];
+const REGION_ORDER = ["US","EU","Canada","LATAM","APAC","MEA","(untagged)"];
+
+/* ---------- period math (local time) ---------- */
+function startOfISOWeek(d){ const x=new Date(d); const day=(x.getDay()+6)%7; x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x; }
+function periodBounds(type, offset){
+  const now = new Date();
+  let start, end, prevStart;
+  if (type==="week"){
+    start = startOfISOWeek(now); start.setDate(start.getDate()+offset*7);
+    end = new Date(start); end.setDate(end.getDate()+7);
+    prevStart = new Date(start); prevStart.setDate(prevStart.getDate()-7);
+  } else if (type==="month"){
+    start = new Date(now.getFullYear(), now.getMonth()+offset, 1);
+    end = new Date(start.getFullYear(), start.getMonth()+1, 1);
+    prevStart = new Date(start.getFullYear(), start.getMonth()-1, 1);
+  } else {
+    const q = Math.floor(now.getMonth()/3)+offset;
+    start = new Date(now.getFullYear(), q*3, 1);
+    end = new Date(start.getFullYear(), start.getMonth()+3, 1);
+    prevStart = new Date(start.getFullYear(), start.getMonth()-3, 1);
+  }
+  return {start, end, prevStart};
+}
+function fmtJQL(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function fmtShort(d){ return d.toLocaleDateString("en-GB",{day:"numeric",month:"short"}); }
+function periodLabel(type,{start,end}){
+  if (type==="week"){ const e=new Date(end); e.setDate(e.getDate()-1);
+    return "Wk "+fmtShort(start)+" – "+fmtShort(e)+" "+e.getFullYear(); }
+  if (type==="month") return start.toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+  return "Q"+(Math.floor(start.getMonth()/3)+1)+" "+start.getFullYear();
+}
+
+/* ---------- jurisdiction dictionaries ---------- */
+const US_STATES = {AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming",DC:"District of Columbia",PR:"Puerto Rico"};
+const COUNTRIES = ["Portugal","Spain","France","Germany","Italy","Netherlands","Belgium","Luxembourg","Ireland","Austria","Poland","Czech Republic","Czechia","Slovakia","Hungary","Romania","Bulgaria","Greece","Croatia","Slovenia","Denmark","Sweden","Finland","Estonia","Latvia","Lithuania","Malta","Cyprus","United Kingdom","Switzerland","Norway","Iceland","Serbia","Ukraine","Turkey","Armenia","Georgia (country)","Canada","Mexico","Brazil","Colombia","Peru","Chile","Argentina","Ecuador","Uruguay","Paraguay","Bolivia","Venezuela","Costa Rica","Guatemala","Panama","Dominican Republic","Australia","New Zealand","Japan","Singapore","India","Nepal","Sri Lanka","Philippines","Indonesia","Malaysia","Thailand","Vietnam","South Korea","China","Taiwan","Hong Kong","Israel","Saudi Arabia","Qatar","Kuwait","Bahrain","Oman","Egypt","Morocco","Algeria","Tunisia","South Africa","Kenya","Nigeria","Ghana","Guinea","Russia"];
+const COUNTRY_ALIASES = {UK:"United Kingdom",UAE:"United Arab Emirates",USA:"United States",
+  "Korea":"South Korea","Holland":"Netherlands"};
+
+function extractJurisdictions(summary, regions){
+  const found = new Set(); const s = summary || "";
+  for (const c of COUNTRIES){
+    if (new RegExp("\\b"+c.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","i").test(s)) found.add(c==="Czechia"?"Czech Republic":c);
+  }
+  for (const [alias,full] of Object.entries(COUNTRY_ALIASES)){
+    if (new RegExp("\\b"+alias+"\\b").test(s)) found.add(full);
+  }
+  for (const name of Object.values(US_STATES)){
+    if (new RegExp("\\b"+name+"\\b","i").test(s)) found.add(name+" (US)");
+  }
+  // 2-letter uppercase codes: state codes, with CA disambiguated by region tag
+  const codes = s.match(/\b[A-Z]{2}\b/g) || [];
+  for (const code of codes){
+    if (code==="CA"){ found.add(regions.includes("Canada") && !regions.includes("US") ? "Canada" : "California (US)"); continue; }
+    if (US_STATES[code]) found.add(US_STATES[code]+" (US)");
+    if (code==="EU") found.add("EU (bloc-wide)");
+    if (code==="AU") found.add("Australia");
+    if (code==="NZ") found.add("New Zealand");
+  }
+  if (/\bmulti[- ]state|multiple states|\d+\s+states\b/i.test(s)) found.add("Multi-state (US)");
+  return [...found];
+}
+
+/* ---------- metric helpers ---------- */
+function slaCycle(f, fieldId){
+  const sla = f[fieldId];
+  const cycles = sla && sla.completedCycles;
+  return (cycles && cycles.length) ? cycles[cycles.length-1] : null;
+}
+function resolvedDate(f){
+  // Board never sets resolutiondate; resolved = status category Done.
+  if (f.resolutiondate) return new Date(f.resolutiondate);
+  const done = f.status && f.status.statusCategory && f.status.statusCategory.key === "done";
+  if (!done) return null;
+  const cyc = slaCycle(f, "customfield_10090");
+  if (cyc && cyc.stopTime && cyc.stopTime.epochMillis) return new Date(cyc.stopTime.epochMillis);
+  if (f.statuscategorychangedate) return new Date(f.statuscategorychangedate);
+  return null;
+}
+function tatDone(f, resolved){ // headline TAT in business hours
+  const cyc = slaCycle(f, "customfield_10090");
+  if (cyc && cyc.elapsedTime && cyc.elapsedTime.millis != null)
+    return {h: cyc.elapsedTime.millis/3.6e6, breached: cyc.breached === true, fallback:false};
+  if (resolved && f.created)
+    return {h: (resolved - new Date(f.created))/3.6e6, breached:null, fallback:true};
+  return null;
+}
+function firstResponseH(f){
+  const cyc = slaCycle(f, "customfield_10046");
+  return (cyc && cyc.elapsedTime && cyc.elapsedTime.millis != null) ? cyc.elapsedTime.millis/3.6e6 : null;
+}
+function median(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y);
+  const m=Math.floor(s.length/2); return s.length%2 ? s[m] : (s[m-1]+s[m])/2; }
+function fmtH(h){ return h==null ? "—" : (Math.round(h*10)/10).toLocaleString(); }
+function pct(n,d){ return d ? Math.round(100*n/d)+"%" : "—"; }
+function esc(x){ const d=document.createElement("span"); d.textContent=x==null?"":String(x); return d.innerHTML; }
+
+/* ---------- data fetch ---------- */
+async function fetchAll(jql){
+  let all=[], token=null;
+  for (let page=0; page<12; page++){
+    const args={cloudId:CLOUD_ID, jql, maxResults:100, fields:FIELDS};
+    if (token) args.nextPageToken=token;
+    const r = await window.cowork.callMcpTool(TOOL, args);
+    if (r.isError) throw new Error("Jira query failed: "+(r.content&&r.content[0]&&r.content[0].text||"unknown error"));
+    let data = r.structuredContent;
+    if (!data && r.content && r.content[0] && r.content[0].text) data = JSON.parse(r.content[0].text);
+    // handle both shapes: {issues:{nodes:[...],pageInfo}} and {issues:[...],pageInfo}
+    const box = (data && data.issues) || data || {};
+    const nodes = Array.isArray(box) ? box : (box.nodes || []);
+    all = all.concat(nodes);
+    const pi = (!Array.isArray(box) && box.pageInfo) || (data && data.pageInfo) || null;
+    if (!pi || !pi.hasNextPage) break;
+    token = pi.endCursor;
+  }
+  return all;
+}
+
+/* ---------- state ---------- */
+let periodType = localStorage.getItem("txhlp_period") || "week";
+let offset = 0;
+let charts = {}, selectedRegion = null, currentTickets = [];
+
+/* ---------- main load ---------- */
+async function load(){
+  const statusEl=document.getElementById("status"), mainEl=document.getElementById("main");
+  statusEl.innerHTML='<span class="spin"></span>Loading tickets from Jira…';
+  mainEl.hidden = true; selectedRegion = null;
+  const b = periodBounds(periodType, offset);
+  document.getElementById("periodLabel").textContent = periodLabel(periodType, b);
+  document.getElementById("nextBtn").disabled = offset >= 0;
+  try {
+    // one query spanning previous + current period, both created and resolved bases
+    // NB: this board never sets a Jira "resolution", so resolutiondate is always
+    // null. Resolved = status category Done; timing via statusCategoryChangedDate.
+    const jql = 'project = TXHLP AND ((created >= "'+fmtJQL(b.prevStart)+'" AND created < "'+fmtJQL(b.end)+
+      '") OR (statusCategory = Done AND statusCategoryChangedDate >= "'+fmtJQL(b.prevStart)+
+      '" AND statusCategoryChangedDate < "'+fmtJQL(b.end)+'")) ORDER BY created ASC';
+    const nodes = await fetchAll(jql);
+    render(nodes, b);
+    statusEl.textContent = "";
+    mainEl.hidden = false;
+  } catch(e){
+    console.error(e);
+    statusEl.innerHTML = '<div class="err">Could not load Jira data: '+esc(e.message)+
+      ' — try the Reload button in the header.</div>';
+  }
+}
+
+function classify(nodes, b){
+  const T=[];
+  for (const n of nodes){
+    const f = n.fields || {};
+    const created = new Date(f.created);
+    const resolved = resolvedDate(f);
+    const regions = (f.customfield_11193||[]).map(o=>o.value);
+    T.push({
+      key: n.key, summary: f.summary||"", status: (f.status&&f.status.name)||"?",
+      created, resolved,
+      regions: regions.length?regions:["(untagged)"],
+      jurisdictions: extractJurisdictions(f.summary||"", regions),
+      tat: tatDone(f, resolved), fr: firstResponseH(f),
+      inCurCreated: created>=b.start && created<b.end,
+      inCurResolved: !!resolved && resolved>=b.start && resolved<b.end,
+      inPrevCreated: created>=b.prevStart && created<b.start,
+    });
+  }
+  return T;
+}
+
+function render(nodes, b){
+  const T = classify(nodes, b);
+  currentTickets = T;
+  const cur = T.filter(t=>t.inCurCreated);
+  const res = T.filter(t=>t.inCurResolved);
+  const prevN = T.filter(t=>t.inPrevCreated).length;
+
+  /* KPIs */
+  const tats = res.map(t=>t.tat).filter(Boolean);
+  const withSla = tats.filter(t=>!t.fallback);
+  const within = withSla.filter(t=>t.breached===false).length;
+  const frs = cur.map(t=>t.fr).filter(v=>v!=null);
+  const open = cur.filter(t=>!t.resolved).length;
+  const delta = cur.length - prevN;
+  const dCls = delta>0?"up":(delta<0?"down":"flat");
+  const dTxt = (delta>0?"▲ +":delta<0?"▼ ":"±")+Math.abs(delta)+" vs prev";
+  document.getElementById("kpis").innerHTML = [
+    ['New queries', cur.length, '<span class="d '+dCls+'">'+dTxt+"</span>"],
+    ['Resolved in period', res.length, ''],
+    ['Median TAT', fmtH(median(tats.map(t=>t.h)))+" bh", ''],
+    ['Within 48h SLA', pct(within, withSla.length), withSla.length? within+"/"+withSla.length : ''],
+    ['Median first response', fmtH(median(frs))+" bh", ''],
+    ['Still open (of new)', open, ''],
+  ].map(([l,v,d])=>'<div class="kpi"><div class="v">'+v+'</div><div class="l">'+l+'</div><div>'+d+'</div></div>').join("");
+
+  /* region aggregation */
+  const regions = new Map();
+  const bump=(m,k)=>{ if(!m.has(k)) m.set(k,{nw:0,rs:0,tats:[],within:0,slaN:0,jur:new Map()}); return m.get(k); };
+  for (const t of cur) for (const r of t.regions){
+    const g=bump(regions,r); g.nw++;
+    for (const j of t.jurisdictions) g.jur.set(j,(g.jur.get(j)||0)+1);
+  }
+  for (const t of res) for (const r of t.regions){
+    const g=bump(regions,r); g.rs++;
+    if (t.tat){ g.tats.push(t.tat.h);
+      if (!t.tat.fallback){ g.slaN++; if (t.tat.breached===false) g.within++; } }
+  }
+  const regKeys=[...regions.keys()].sort((a,z)=>{
+    const ai=REGION_ORDER.indexOf(a), zi=REGION_ORDER.indexOf(z);
+    return (ai<0?99:ai)-(zi<0?99:zi);
+  });
+
+  /* charts */
+  const volEl=document.getElementById("chartVol"), tatEl=document.getElementById("chartTat");
+  if (charts.vol) charts.vol.destroy();
+  if (charts.tat) charts.tat.destroy();
+  charts.vol = new Chart(volEl,{type:"bar",
+    data:{labels:regKeys,datasets:[{label:"New queries",data:regKeys.map(k=>regions.get(k).nw),backgroundColor:"#5b3df5"}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  charts.tat = new Chart(tatEl,{type:"bar",
+    data:{labels:regKeys,datasets:[{label:"Median TAT (bh)",data:regKeys.map(k=>median(regions.get(k).tats)),backgroundColor:"#0e8a5f"}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true}}}});
+
+  /* region table */
+  const rt=document.querySelector("#regionTable tbody");
+  rt.innerHTML = regKeys.map(k=>{
+    const g=regions.get(k);
+    const top=[...g.jur.entries()].sort((a,z)=>z[1]-a[1]).slice(0,3)
+      .map(([j,c])=>esc(j)+" ("+c+")").join(", ")||"—";
+    return '<tr class="clickable" data-region="'+esc(k)+'"><td><b>'+esc(k)+'</b></td>'+
+      '<td class="num">'+g.nw+'</td><td class="num">'+g.rs+'</td>'+
+      '<td class="num">'+fmtH(median(g.tats))+'</td>'+
+      '<td class="num">'+pct(g.within,g.slaN)+'</td><td>'+top+'</td></tr>';
+  }).join("") || '<tr><td colspan="6">No tickets in this period.</td></tr>';
+  rt.querySelectorAll("tr.clickable").forEach(tr=>tr.addEventListener("click",()=>{
+    selectedRegion = selectedRegion===tr.dataset.region ? null : tr.dataset.region;
+    rt.querySelectorAll("tr").forEach(x=>x.classList.toggle("sel",x.dataset.region===selectedRegion));
+    renderTickets();
+  }));
+
+  /* jurisdiction drill-down */
+  const jm=new Map();
+  const jb=(k)=>{ if(!jm.has(k)) jm.set(k,{nw:0,rs:0,tats:[],regs:new Set()}); return jm.get(k); };
+  for (const t of cur) for (const j of t.jurisdictions){
+    const g=jb(j); g.nw++; t.regions.forEach(r=>g.regs.add(r));
+  }
+  for (const t of res) for (const j of t.jurisdictions){
+    const g=jb(j); g.rs++; if(t.tat) g.tats.push(t.tat.h);
+  }
+  const jrows=[...jm.entries()].sort((a,z)=>z[1].nw-a[1].nw || z[1].rs-a[1].rs);
+  document.querySelector("#countryTable tbody").innerHTML =
+    jrows.map(([j,g])=>'<tr><td>'+esc(j)+'</td><td>'+esc([...g.regs].join(", "))+'</td>'+
+      '<td class="num">'+g.nw+'</td><td class="num">'+g.rs+'</td>'+
+      '<td class="num">'+fmtH(median(g.tats))+'</td></tr>').join("")
+    || '<tr><td colspan="5">Nothing extracted — summaries may not name jurisdictions this period.</td></tr>';
+  const unmatched = cur.filter(t=>!t.jurisdictions.length).length;
+
+  renderTickets();
+
+  document.getElementById("foot").innerHTML =
+    "TAT = business hours on the JSM “Time to done” SLA clock (48h goal; pauses while awaiting customer info; weekends excluded). "+
+    "First response = “Time to first response” SLA (24h goal). Rows marked * use calendar time (no SLA data). "+
+    "Jurisdiction drill-down is dictionary-matched from summaries — treat as indicative (yellow), not verified. "+
+    (unmatched? unmatched+" new ticket(s) had no extractable jurisdiction (counted in region totals only). " : "")+
+    "Resolved = status category Done (this board sets no Jira resolution); resolution time from the SLA stop clock. "+
+    "Volume = tickets created in period; TAT = tickets resolved in period. Fetched "+nodes.length+" tickets · "+new Date().toLocaleString();
+}
+
+function renderTickets(){
+  const b = periodBounds(periodType, offset);
+  const rows = currentTickets
+    .filter(t=>t.inCurCreated || t.inCurResolved)
+    .filter(t=>!selectedRegion || t.regions.includes(selectedRegion))
+    .sort((a,z)=>z.created-a.created);
+  document.getElementById("ticketFilterLabel").textContent = selectedRegion || "all regions";
+  document.querySelector("#ticketTable tbody").innerHTML = rows.map(t=>{
+    const badge = t.resolved
+      ? (t.tat && t.tat.breached===true ? '<span class="badge red">'+esc(t.status)+'</span>'
+                                        : '<span class="badge green">'+esc(t.status)+'</span>')
+      : '<span class="badge grey">'+esc(t.status)+'</span>';
+    return '<tr><td><a href="'+JIRA_BROWSE+t.key+'" target="_blank" rel="noopener">'+t.key+'</a></td>'+
+      '<td>'+esc(t.summary)+'</td><td>'+esc(t.regions.join(", "))+'</td><td>'+badge+'</td>'+
+      '<td class="num">'+(t.tat?fmtH(t.tat.h)+(t.tat.fallback?"*":""):"—")+'</td>'+
+      '<td>'+t.created.toLocaleDateString("en-GB",{day:"numeric",month:"short"})+'</td></tr>';
+  }).join("") || '<tr><td colspan="6">No tickets.</td></tr>';
+}
+
+/* ---------- controls ---------- */
+const seg=document.getElementById("segPeriod");
+function syncSeg(){ seg.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.p===periodType)); }
+seg.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{
+  periodType=btn.dataset.p; offset=0;
+  localStorage.setItem("txhlp_period",periodType);
+  syncSeg(); load();
+}));
+document.getElementById("prevBtn").addEventListener("click",()=>{ offset--; load(); });
+document.getElementById("nextBtn").addEventListener("click",()=>{ if(offset<0){ offset++; load(); } });
+syncSeg(); load();
+</script>
+</body>
+</html>
