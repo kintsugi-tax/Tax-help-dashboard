@@ -1,3 +1,6 @@
 .DS_Store
 *.log
 node_modules/
+
+# Local planning docs (plans, design notes); see the planning-doc-placement rule.
+docs/plans/
